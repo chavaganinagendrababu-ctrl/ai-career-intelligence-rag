@@ -25,39 +25,50 @@ st.set_page_config(
 
 
 # =========================================================
-# HELPER FUNCTIONS
+# INITIALIZE RESET COUNTERS
+# =========================================================
+
+if "general_reset" not in st.session_state:
+    st.session_state.general_reset = 0
+
+if "career_reset" not in st.session_state:
+    st.session_state.career_reset = 0
+
+
+# =========================================================
+# CLEAR GENERAL RAG
 # =========================================================
 
 def clear_general():
 
-    keys = [
-        "general_retriever",
-        "general_file_name",
-        "general_question"
-    ]
+    st.session_state.general_retriever = None
+    st.session_state.general_file_name = None
+    st.session_state.general_question = ""
 
-    for key in keys:
+    st.session_state.general_reset += 1
 
-        if key in st.session_state:
-            del st.session_state[key]
 
+# =========================================================
+# CLEAR CAREER ANALYSIS
+# =========================================================
 
 def clear_career():
 
-    keys = [
-        "resume_retriever",
-        "resume_file_name",
-        "jd_retriever",
-        "jd_text",
-        "job_analysis",
-        "career_question"
-    ]
+    st.session_state.resume_retriever = None
+    st.session_state.resume_file_name = None
 
-    for key in keys:
+    st.session_state.jd_retriever = None
+    st.session_state.jd_text = ""
 
-        if key in st.session_state:
-            del st.session_state[key]
+    st.session_state.job_analysis = None
+    st.session_state.career_question = ""
 
+    st.session_state.career_reset += 1
+
+
+# =========================================================
+# API ERROR HANDLER
+# =========================================================
 
 def handle_api_error(error):
 
@@ -73,8 +84,7 @@ def handle_api_error(error):
     elif "API_KEY" in error_message:
 
         st.error(
-            "Gemini API key is invalid. "
-            "Check your .env file."
+            "Gemini API key is invalid or missing."
         )
 
     else:
@@ -93,8 +103,8 @@ def handle_api_error(error):
 st.title("🤖 AI Career Intelligence")
 
 st.write(
-    "RAG-powered resume analysis, job matching, "
-    "skill-gap identification and document Q&A."
+    "RAG-powered document Q&A, resume-job matching, "
+    "skill-gap analysis and career recommendations."
 )
 
 st.divider()
@@ -107,20 +117,19 @@ st.divider()
 st.header("📄 General Document RAG")
 
 st.write(
-    "Upload any PDF and ask questions using its content."
+    "Upload a PDF and ask questions based on its content."
 )
 
 
 document_file = st.file_uploader(
     "Upload PDF",
     type=["pdf"],
-    key="general_document"
+    key=f"general_document_{st.session_state.general_reset}"
 )
 
 
 if document_file:
 
-    # Maximum file size: 20 MB
     MAX_FILE_SIZE = 20 * 1024 * 1024
 
     if document_file.size > MAX_FILE_SIZE:
@@ -129,121 +138,126 @@ if document_file:
             "File is too large. Maximum allowed size is 20 MB."
         )
 
-        st.stop()
+    else:
 
+        current_file = document_file.name
 
-    if (
-        "general_retriever" not in st.session_state
-        or st.session_state.get("general_file_name")
-        != document_file.name
-    ):
-
-        with tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=".pdf"
-        ) as temp_file:
-
-            temp_file.write(
-                document_file.getvalue()
-            )
-
-            document_path = temp_file.name
-
-
-        with st.spinner(
-            "Processing document and creating RAG index..."
+        if (
+            st.session_state.get("general_file_name")
+            != current_file
         ):
 
-            try:
+            with tempfile.NamedTemporaryFile(
+                delete=False,
+                suffix=".pdf"
+            ) as temp_file:
 
-                st.session_state.general_retriever = (
-                    create_rag(document_path)
+                temp_file.write(
+                    document_file.getvalue()
                 )
 
-                st.session_state.general_file_name = (
-                    document_file.name
-                )
-
-                st.success(
-                    "Document processed successfully."
-                )
-
-            except Exception as e:
-
-                handle_api_error(e)
-
-            finally:
-
-                if os.path.exists(document_path):
-
-                    os.remove(document_path)
+                document_path = temp_file.name
 
 
-    if "general_retriever" in st.session_state:
+            with st.spinner(
+                "Processing document..."
+            ):
 
-        question = st.text_input(
-            "Ask a question",
-            placeholder="Example: What are the main findings?",
-            key="general_question"
+                try:
+
+                    st.session_state.general_retriever = (
+                        create_rag(document_path)
+                    )
+
+                    st.session_state.general_file_name = (
+                        current_file
+                    )
+
+                    st.success(
+                        "Document processed successfully."
+                    )
+
+                except Exception as e:
+
+                    handle_api_error(e)
+
+                finally:
+
+                    if os.path.exists(document_path):
+
+                        os.remove(document_path)
+
+
+if (
+    st.session_state.get("general_retriever")
+    is not None
+):
+
+    question = st.text_input(
+        "Ask a question",
+        placeholder="Example: What are the main findings?",
+        key=f"general_question_{st.session_state.general_reset}"
+    )
+
+
+    col1, col2 = st.columns(2)
+
+
+    with col1:
+
+        ask_general = st.button(
+            "🔍 Ask Document",
+            use_container_width=True,
+            key=f"ask_general_{st.session_state.general_reset}"
         )
 
 
-        col1, col2 = st.columns(2)
+    with col2:
+
+        clear_general_button = st.button(
+            "🗑️ Clear Document",
+            use_container_width=True,
+            key=f"clear_general_{st.session_state.general_reset}"
+        )
 
 
-        with col1:
+    if clear_general_button:
 
-            ask_button = st.button(
-                "🔍 Ask Document",
-                use_container_width=True
+        clear_general()
+
+        st.rerun()
+
+
+    if ask_general:
+
+        if not question.strip():
+
+            st.warning(
+                "Please enter a question."
             )
 
+        else:
 
-        with col2:
+            with st.spinner(
+                "Searching the document..."
+            ):
 
-            clear_button = st.button(
-                "🗑️ Clear Document",
-                use_container_width=True
-            )
+                try:
 
+                    result = ask_document(
+                        st.session_state.general_retriever,
+                        question
+                    )
 
-        if clear_button:
+                    st.subheader(
+                        "💬 Answer"
+                    )
 
-            clear_general()
+                    st.write(result)
 
-            st.rerun()
+                except Exception as e:
 
-
-        if ask_button:
-
-            if not question.strip():
-
-                st.warning(
-                    "Please enter a question."
-                )
-
-            else:
-
-                with st.spinner(
-                    "Searching the document..."
-                ):
-
-                    try:
-
-                        result = ask_document(
-                            st.session_state.general_retriever,
-                            question
-                        )
-
-                        st.subheader(
-                            "💬 Answer"
-                        )
-
-                        st.write(result)
-
-                    except Exception as e:
-
-                        handle_api_error(e)
+                    handle_api_error(e)
 
 
 st.divider()
@@ -256,13 +270,13 @@ st.divider()
 st.header("🎯 Resume + Job Matching")
 
 st.write(
-    "Upload your resume and paste the job description "
-    "to evaluate your alignment with the role."
+    "Upload your resume and paste a job description "
+    "to understand your alignment with the role."
 )
 
 
 # =========================================================
-# RESUME
+# RESUME UPLOAD
 # =========================================================
 
 st.subheader("1. Upload Resume")
@@ -271,69 +285,68 @@ st.subheader("1. Upload Resume")
 resume_file = st.file_uploader(
     "Resume PDF",
     type=["pdf"],
-    key="resume_file"
+    key=f"resume_file_{st.session_state.career_reset}"
 )
 
 
 if resume_file:
 
-    # Maximum resume size: 10 MB
-    MAX_FILE_SIZE = 10 * 1024 * 1024
+    MAX_RESUME_SIZE = 10 * 1024 * 1024
 
-    if resume_file.size > MAX_FILE_SIZE:
+    if resume_file.size > MAX_RESUME_SIZE:
 
         st.error(
             "Resume is too large. Maximum allowed size is 10 MB."
         )
 
-        st.stop()
+    else:
 
+        current_resume = resume_file.name
 
-    if (
-        "resume_retriever" not in st.session_state
-        or st.session_state.get("resume_file_name")
-        != resume_file.name
-    ):
-
-        with tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=".pdf"
-        ) as temp_file:
-
-            temp_file.write(
-                resume_file.getvalue()
-            )
-
-            resume_path = temp_file.name
-
-
-        with st.spinner(
-            "Processing resume..."
+        if (
+            st.session_state.get("resume_file_name")
+            != current_resume
         ):
 
-            try:
+            with tempfile.NamedTemporaryFile(
+                delete=False,
+                suffix=".pdf"
+            ) as temp_file:
 
-                st.session_state.resume_retriever = (
-                    create_rag(resume_path)
+                temp_file.write(
+                    resume_file.getvalue()
                 )
 
-                st.session_state.resume_file_name = (
-                    resume_file.name
-                )
+                resume_path = temp_file.name
 
-                st.success(
-                    "Resume processed successfully."
-                )
 
-            except Exception as e:
+            with st.spinner(
+                "Processing resume..."
+            ):
 
-                handle_api_error(e)
+                try:
 
-            finally:
+                    st.session_state.resume_retriever = (
+                        create_rag(resume_path)
+                    )
 
-                if os.path.exists(resume_path):
+                    st.session_state.resume_file_name = (
+                        current_resume
+                    )
 
-                    os.remove(resume_path)
+                    st.success(
+                        "Resume processed successfully."
+                    )
+
+                except Exception as e:
+
+                    handle_api_error(e)
+
+                finally:
+
+                    if os.path.exists(resume_path):
+
+                        os.remove(resume_path)
 
 
 # =========================================================
@@ -346,10 +359,11 @@ st.subheader("2. Paste Job Description")
 job_description = st.text_area(
     "Job Description",
     placeholder=(
-        "Copy the complete job description and paste it here..."
+        "Copy the complete job description "
+        "and paste it here..."
     ),
     height=300,
-    key="job_description"
+    key=f"job_description_{st.session_state.career_reset}"
 )
 
 
@@ -359,12 +373,12 @@ job_description = st.text_area(
 
 if (
     job_description.strip()
-    and "resume_retriever" in st.session_state
+    and st.session_state.get("resume_retriever")
+    is not None
 ):
 
     if (
-        "jd_retriever" not in st.session_state
-        or st.session_state.get("jd_text")
+        st.session_state.get("jd_text")
         != job_description
     ):
 
@@ -405,8 +419,11 @@ if (
 # =========================================================
 
 if (
-    "resume_retriever" in st.session_state
-    and "jd_retriever" in st.session_state
+    st.session_state.get("resume_retriever")
+    is not None
+    and
+    st.session_state.get("jd_retriever")
+    is not None
 ):
 
     st.divider()
@@ -421,7 +438,8 @@ if (
 
         analyze_button = st.button(
             "🎯 Analyze Job Match",
-            use_container_width=True
+            use_container_width=True,
+            key=f"analyze_{st.session_state.career_reset}"
         )
 
 
@@ -429,7 +447,8 @@ if (
 
         clear_career_button = st.button(
             "🗑️ Clear Resume + JD",
-            use_container_width=True
+            use_container_width=True,
+            key=f"clear_career_{st.session_state.career_reset}"
         )
 
 
@@ -453,9 +472,7 @@ if (
                     st.session_state.jd_retriever
                 )
 
-                st.session_state.job_analysis = (
-                    result
-                )
+                st.session_state.job_analysis = result
 
             except Exception as e:
 
@@ -466,7 +483,10 @@ if (
 # DISPLAY ATS RESULT
 # =========================================================
 
-if "job_analysis" in st.session_state:
+if (
+    st.session_state.get("job_analysis")
+    is not None
+):
 
     st.subheader(
         "📊 Job Match Analysis"
@@ -474,7 +494,7 @@ if "job_analysis" in st.session_state:
 
     st.info(
         "The ATS score is an estimated alignment score "
-        "based on the uploaded resume and job description."
+        "based on your resume and this job description."
     )
 
     st.write(
@@ -488,17 +508,21 @@ if "job_analysis" in st.session_state:
             st.session_state.job_analysis
         ),
         file_name="job_match_analysis.txt",
-        mime="text/plain"
+        mime="text/plain",
+        key=f"download_{st.session_state.career_reset}"
     )
 
 
 # =========================================================
-# CAREER RAG Q&A
+# RESUME + JD RAG Q&A
 # =========================================================
 
 if (
-    "resume_retriever" in st.session_state
-    and "jd_retriever" in st.session_state
+    st.session_state.get("resume_retriever")
+    is not None
+    and
+    st.session_state.get("jd_retriever")
+    is not None
 ):
 
     st.divider()
@@ -513,13 +537,14 @@ if (
         placeholder=(
             "Example: Why is my ATS score low?"
         ),
-        key="career_question"
+        key=f"career_question_{st.session_state.career_reset}"
     )
 
 
     if st.button(
         "💬 Ask AI",
-        use_container_width=True
+        use_container_width=True,
+        key=f"ask_career_{st.session_state.career_reset}"
     ):
 
         if not career_question.strip():
@@ -531,7 +556,7 @@ if (
         else:
 
             with st.spinner(
-                "Retrieving evidence..."
+                "Retrieving evidence from resume and JD..."
             ):
 
                 try:
@@ -560,5 +585,6 @@ if (
 st.divider()
 
 st.caption(
-    "AI Career Intelligence | LangChain + FAISS + Gemini + Streamlit"
+    "AI Career Intelligence | "
+    "LangChain + FAISS + Local Embeddings + Gemini + Streamlit"
 )

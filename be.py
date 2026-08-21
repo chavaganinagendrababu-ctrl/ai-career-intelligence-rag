@@ -5,8 +5,9 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
+from langchain_community.embeddings import HuggingFaceEmbeddings
+
 from langchain_google_genai import GoogleGenerativeAI
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -21,14 +22,38 @@ load_dotenv()
 
 api_key = os.getenv("GOOGLE_API_KEY")
 
+
+if not api_key:
+    try:
+        import streamlit as st
+
+        api_key = st.secrets["GOOGLE_API_KEY"]
+
+    except Exception:
+        api_key = None
+
+
 if not api_key:
     raise ValueError(
-        "GOOGLE_API_KEY is missing from the .env file."
+        "GOOGLE_API_KEY is not configured. "
+        "Add it to .env locally or Streamlit Secrets when deployed."
     )
 
 
 GENERATION_MODEL = "gemini-3.5-flash-lite"
-EMBEDDING_MODEL = "gemini-embedding-2"
+
+
+# =========================================================
+# LOCAL EMBEDDING MODEL
+# =========================================================
+
+def get_embeddings():
+
+    embeddings = HuggingFaceEmbeddings(
+        model_name="all-MiniLM-L6-v2"
+    )
+
+    return embeddings
 
 
 # =========================================================
@@ -37,7 +62,9 @@ EMBEDDING_MODEL = "gemini-embedding-2"
 
 def load_pdf(pdf_path):
 
-    loader = PyPDFLoader(pdf_path)
+    loader = PyPDFLoader(
+        pdf_path
+    )
 
     documents = loader.load()
 
@@ -55,7 +82,9 @@ def split_documents(documents):
         chunk_overlap=50
     )
 
-    chunks = splitter.split_documents(documents)
+    chunks = splitter.split_documents(
+        documents
+    )
 
     return chunks
 
@@ -66,12 +95,11 @@ def split_documents(documents):
 
 def create_rag_from_documents(documents):
 
-    chunks = split_documents(documents)
-
-    embeddings = GoogleGenerativeAIEmbeddings(
-        model=EMBEDDING_MODEL,
-        api_key=api_key
+    chunks = split_documents(
+        documents
     )
+
+    embeddings = get_embeddings()
 
     vector_db = FAISS.from_documents(
         chunks,
@@ -93,7 +121,9 @@ def create_rag_from_documents(documents):
 
 def create_rag(pdf_path):
 
-    documents = load_pdf(pdf_path)
+    documents = load_pdf(
+        pdf_path
+    )
 
     retriever = create_rag_from_documents(
         documents
@@ -103,7 +133,7 @@ def create_rag(pdf_path):
 
 
 # =========================================================
-# FORMAT RETRIEVED DOCUMENTS
+# FORMAT DOCUMENTS
 # =========================================================
 
 def format_docs(docs):
@@ -113,7 +143,10 @@ def format_docs(docs):
     for doc in docs:
 
         page_number = (
-            doc.metadata.get("page", 0) + 1
+            doc.metadata.get(
+                "page",
+                0
+            ) + 1
         )
 
         source = doc.metadata.get(
@@ -166,8 +199,7 @@ def ask_document(
         If the answer is not available in the context,
         say:
 
-        "I couldn't find this information in the
-        uploaded document."
+        "I couldn't find this information in the uploaded document."
 
         Give a clear and useful answer.
 
